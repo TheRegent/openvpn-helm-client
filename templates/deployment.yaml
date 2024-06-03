@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "openvpn-client.fullname" . }}
+  labels:
+    {{- include "openvpn-client.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "openvpn-client.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "openvpn-client.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "openvpn-client.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      initContainers:
+        - command:
+          - bash
+          - -c
+          - sysctl -w net.ipv4.ip_forward=1
+          image: bash
+          imagePullPolicy: IfNotPresent
+          name: sysctl
+          resources: {}
+          securityContext:
+            privileged: true
+      containers:
+        - name: {{ .Chart.Name }}
+          command:
+          - sh
+          - -c
+          - apk add openvpn iptables &&
+            iptables -P FORWARD DROP && 
+            {{- if .Values.subnets }}iptables -A FORWARD -d "{{ .Values.subnets }}" -j ACCEPT && {{- end }} 
+            iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT &&
+            iptables -t nat -A POSTROUTING  -j MASQUERADE &&
+            mkdir -p /dev/net && mknod /dev/net/tun c 10 200 && 
+            chmod 600 /dev/net/tun && openvpn --config  /etc/openvpn.conf --auth-user-pass /etc/userpass.txt
+          volumeMounts:
+            - mountPath: /etc/openvpn.conf
+              name: files
+              subPath: openvpn-conf
+            - mountPath: /etc/userpass.txt
+              name: files
+              subPath: userpass-txt
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: files
+          configMap:
+            name: {{ include "openvpn-client.fullname" . }}
