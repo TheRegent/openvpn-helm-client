@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rick-morty-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: rick-morty-app
+  template:
+    metadata:
+      labels:
+        app: rick-morty-app
+    spec:
+      containers:
+      - name: rick-morty-app
+        image: regentt/rick-morty-app
+        ports:
+        - containerPort: 80
+
